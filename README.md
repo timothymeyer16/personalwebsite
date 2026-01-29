@@ -1,1 +1,1 @@
-"# personalwebsite" 
+powershell -ExecutionPolicy Bypass -File .\Start-Dev.ps1

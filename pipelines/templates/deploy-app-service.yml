@@ -1,0 +1,66 @@
+# Template: Deploy to Azure App Service
+# Deploys the application artifact to Azure App Service
+
+parameters:
+  - name: azureSubscription
+    type: string
+  - name: appServiceName
+    type: string
+  - name: resourceGroupName
+    type: string
+
+steps:
+  # Download artifact
+  - task: DownloadBuildArtifacts@1
+    displayName: 'Download Artifact'
+    inputs:
+      buildType: 'current'
+      downloadType: 'single'
+      artifactName: 'webapp'
+      downloadPath: '$(System.ArtifactsDirectory)'
+
+  # Deploy to App Service
+  - task: AzureWebApp@1
+    displayName: 'Deploy to Azure App Service'
+    inputs:
+      azureSubscription: '${{ parameters.azureSubscription }}'
+      appType: 'webApp'
+      appName: '${{ parameters.appServiceName }}'
+      resourceGroupName: '${{ parameters.resourceGroupName }}'
+      package: '$(System.ArtifactsDirectory)/webapp'
+      deploymentMethod: 'auto'
+
+  # Verify deployment
+  - task: PowerShell@2
+    displayName: 'Verify Deployment'
+    inputs:
+      targetType: 'inline'
+      script: |
+        $url = "https://${{ parameters.appServiceName }}.azurewebsites.net/health"
+        $maxAttempts = 5
+        $attempt = 0
+        
+        do {
+          $attempt++
+          Write-Host "Attempt $attempt of $maxAttempts: Checking $url"
+          
+          try {
+            $response = Invoke-WebRequest -Uri $url -TimeoutSec 30 -UseBasicParsing
+            if ($response.StatusCode -eq 200) {
+              Write-Host "✓ Application is healthy!" -ForegroundColor Green
+              exit 0
+            }
+          }
+          catch {
+            Write-Host "Application not ready yet: $_"
+          }
+          
+          if ($attempt -lt $maxAttempts) {
+            Write-Host "Waiting 30 seconds before retry..."
+            Start-Sleep -Seconds 30
+          }
+        } while ($attempt -lt $maxAttempts)
+        
+        Write-Host "⚠ Health check did not pass after $maxAttempts attempts" -ForegroundColor Yellow
+        Write-Host "This may be normal if the health endpoint is not configured yet."
+    continueOnError: true

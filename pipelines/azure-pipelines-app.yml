@@ -1,0 +1,101 @@
+# Azure DevOps Pipeline - Application Build and Deploy
+# Builds React frontend and .NET API, deploys to Azure App Service
+
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - src/**
+
+pr:
+  branches:
+    include:
+      - develop
+      - main
+  paths:
+    include:
+      - src/**
+
+variables:
+  buildConfiguration: 'Release'
+  dotnetVersion: '7.x'
+  nodeVersion: '20.x'
+  azureSubscription: 'Azure-ServiceConnection' # Update with your service connection name
+  appServiceName: 'app-personalwebsite-prod'
+  resourceGroupName: 'rg-personalwebsite-prod'
+
+stages:
+  # Build Stage
+  - stage: Build
+    displayName: 'Build'
+    jobs:
+      - job: BuildJob
+        displayName: 'Build React & .NET'
+        pool:
+          vmImage: 'windows-latest'
+        
+        steps:
+          # Checkout code
+          - checkout: self
+            fetchDepth: 1
+
+          # Setup Node.js
+          - task: NodeTool@0
+            displayName: 'Install Node.js'
+            inputs:
+              versionSpec: '$(nodeVersion)'
+
+          # Setup .NET
+          - task: UseDotNet@2
+            displayName: 'Install .NET SDK'
+            inputs:
+              version: '$(dotnetVersion)'
+
+          # Build React Frontend
+          - template: templates/build-web.yml
+            parameters:
+              workingDirectory: 'src/PersonalWebsite.Web'
+
+          # Build .NET API
+          - template: templates/build-api.yml
+            parameters:
+              workingDirectory: 'src/PersonalWebsite.Api'
+              buildConfiguration: '$(buildConfiguration)'
+
+          # Copy React build to API wwwroot
+          - task: CopyFiles@2
+            displayName: 'Copy React build to API wwwroot'
+            inputs:
+              sourceFolder: 'src/PersonalWebsite.Web/dist'
+              contents: '**'
+              targetFolder: 'src/PersonalWebsite.Api/bin/$(buildConfiguration)/net7.0/publish/wwwroot'
+
+          # Publish artifact
+          - task: PublishBuildArtifacts@1
+            displayName: 'Publish Artifact'
+            inputs:
+              pathToPublish: 'src/PersonalWebsite.Api/bin/$(buildConfiguration)/net7.0/publish'
+              artifactName: 'webapp'
+
+  # Deploy Stage (only on main branch)
+  - stage: Deploy
+    displayName: 'Deploy to Production'
+    dependsOn: Build
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+    jobs:
+      - deployment: DeployJob
+        displayName: 'Deploy to Azure App Service'
+        pool:
+          vmImage: 'windows-latest'
+        environment: 'production'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - template: templates/deploy-app-service.yml
+                  parameters:
+                    azureSubscription: '$(azureSubscription)'
+                    appServiceName: '$(appServiceName)'
+                    resourceGroupName: '$(resourceGroupName)'

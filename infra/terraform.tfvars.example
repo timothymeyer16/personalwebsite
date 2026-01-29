@@ -1,0 +1,9 @@
+# DO NOT COMMIT THIS FILE TO SOURCE CONTROL
+# Copy this file to terraform.tfvars and fill in your values
+
+subscription_id    = "16e19706-c60e-4dcf-a24c-050487191622"
+project_name       = "personalwebsite"
+environment        = "prod"
+location           = "East US"
+sql_admin_username = "sqladmin"
+sql_admin_password = "CHANGE_ME_SECURE_PASSWORD_123!"

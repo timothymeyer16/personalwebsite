@@ -1,0 +1,141 @@
+# Azure DevOps Pipeline - Infrastructure (Terraform)
+# Deploys Azure resources using Terraform
+
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - infra/**
+
+pr:
+  branches:
+    include:
+      - develop
+      - main
+  paths:
+    include:
+      - infra/**
+
+variables:
+  terraformVersion: '1.5.0'
+  azureSubscription: 'Azure-ServiceConnection' # Update with your service connection name
+  backendResourceGroup: 'rg-terraform-state'
+  backendStorageAccount: 'stpersonalwebsitetfstate'
+  backendContainerName: 'tfstate'
+  backendKey: 'personalwebsite.terraform.tfstate'
+
+stages:
+  # Plan Stage (runs on all branches)
+  - stage: Plan
+    displayName: 'Terraform Plan'
+    jobs:
+      - job: TerraformPlan
+        displayName: 'Plan Infrastructure Changes'
+        pool:
+          vmImage: 'ubuntu-latest'
+        
+        steps:
+          - checkout: self
+            fetchDepth: 1
+
+          # Install Terraform
+          - task: TerraformInstaller@1
+            displayName: 'Install Terraform'
+            inputs:
+              terraformVersion: '$(terraformVersion)'
+
+          # Terraform Init
+          - task: TerraformTaskV4@4
+            displayName: 'Terraform Init'
+            inputs:
+              provider: 'azurerm'
+              command: 'init'
+              workingDirectory: 'infra'
+              backendServiceArm: '$(azureSubscription)'
+              backendAzureRmResourceGroupName: '$(backendResourceGroup)'
+              backendAzureRmStorageAccountName: '$(backendStorageAccount)'
+              backendAzureRmContainerName: '$(backendContainerName)'
+              backendAzureRmKey: '$(backendKey)'
+
+          # Terraform Validate
+          - task: TerraformTaskV4@4
+            displayName: 'Terraform Validate'
+            inputs:
+              provider: 'azurerm'
+              command: 'validate'
+              workingDirectory: 'infra'
+
+          # Terraform Plan
+          - task: TerraformTaskV4@4
+            displayName: 'Terraform Plan'
+            inputs:
+              provider: 'azurerm'
+              command: 'plan'
+              workingDirectory: 'infra'
+              environmentServiceNameAzureRM: '$(azureSubscription)'
+              commandOptions: '-out=tfplan -var-file=terraform.tfvars'
+
+          # Publish plan artifact
+          - task: PublishBuildArtifacts@1
+            displayName: 'Publish Terraform Plan'
+            inputs:
+              pathToPublish: 'infra/tfplan'
+              artifactName: 'terraform-plan'
+
+  # Apply Stage (only on main branch, with approval)
+  - stage: Apply
+    displayName: 'Terraform Apply'
+    dependsOn: Plan
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+    jobs:
+      - deployment: TerraformApply
+        displayName: 'Apply Infrastructure Changes'
+        pool:
+          vmImage: 'ubuntu-latest'
+        environment: 'infrastructure-prod'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                  fetchDepth: 1
+
+                # Download plan artifact
+                - task: DownloadBuildArtifacts@1
+                  displayName: 'Download Terraform Plan'
+                  inputs:
+                    buildType: 'current'
+                    downloadType: 'single'
+                    artifactName: 'terraform-plan'
+                    downloadPath: 'infra'
+
+                # Install Terraform
+                - task: TerraformInstaller@1
+                  displayName: 'Install Terraform'
+                  inputs:
+                    terraformVersion: '$(terraformVersion)'
+
+                # Terraform Init
+                - task: TerraformTaskV4@4
+                  displayName: 'Terraform Init'
+                  inputs:
+                    provider: 'azurerm'
+                    command: 'init'
+                    workingDirectory: 'infra'
+                    backendServiceArm: '$(azureSubscription)'
+                    backendAzureRmResourceGroupName: '$(backendResourceGroup)'
+                    backendAzureRmStorageAccountName: '$(backendStorageAccount)'
+                    backendAzureRmContainerName: '$(backendContainerName)'
+                    backendAzureRmKey: '$(backendKey)'
+
+                # Terraform Apply
+                - task: TerraformTaskV4@4
+                  displayName: 'Terraform Apply'
+                  inputs:
+                    provider: 'azurerm'
+                    command: 'apply'
+                    workingDirectory: 'infra'
+                    environmentServiceNameAzureRM: '$(azureSubscription)'
+                    commandOptions: 'infra/terraform-plan/tfplan'

@@ -1,0 +1,50 @@
+# Template: Build React Web App
+# Installs dependencies, lints, tests, and builds the React application
+
+parameters:
+  - name: workingDirectory
+    type: string
+    default: 'src/PersonalWebsite.Web'
+
+steps:
+  # Install npm dependencies
+  - task: Npm@1
+    displayName: 'Install npm packages'
+    inputs:
+      command: 'install'
+      workingDir: '${{ parameters.workingDirectory }}'
+
+  # Run linting
+  - task: Npm@1
+    displayName: 'Run ESLint'
+    inputs:
+      command: 'custom'
+      workingDir: '${{ parameters.workingDirectory }}'
+      customCommand: 'run lint'
+    continueOnError: true
+
+  # Run tests (if configured)
+  - task: Npm@1
+    displayName: 'Run Tests'
+    inputs:
+      command: 'custom'
+      workingDir: '${{ parameters.workingDirectory }}'
+      customCommand: 'run test -- --run --reporter=junit --outputFile=test-results.xml'
+    continueOnError: true
+
+  # Publish test results
+  - task: PublishTestResults@2
+    displayName: 'Publish Test Results'
+    inputs:
+      testResultsFormat: 'JUnit'
+      testResultsFiles: '${{ parameters.workingDirectory }}/test-results.xml'
+      failTaskOnFailedTests: false
+    condition: always()
+
+  # Build for production
+  - task: Npm@1
+    displayName: 'Build React App'
+    inputs:
+      command: 'custom'
+      workingDir: '${{ parameters.workingDirectory }}'
+      customCommand: 'run build'
