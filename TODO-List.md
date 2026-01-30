@@ -5,6 +5,36 @@
 
 ---
 
+## 🎯 Target Architecture: GitOps Deployment
+
+**Core Principle:** All deployments happen through Azure DevOps pipelines - never locally.
+
+```
+┌──────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌────────────┐
+│  Push    │───▶│  Security   │───▶│   Build &   │───▶│   Manual    │───▶│   Deploy   │
+│  Code    │    │   Scans     │    │    Plan     │    │  Approval   │    │  to Azure  │
+└──────────┘    └─────────────┘    └─────────────┘    └─────────────┘    └────────────┘
+                 • GitLeaks         • Terraform Plan    • Review changes   • Terraform Apply
+                 • tfsec            • Show diff         • Approve/Reject   • App Deploy
+                 • Checkov          • Build artifacts
+```
+
+### Pipeline Responsibilities
+
+| Pipeline | Trigger | What It Does |
+|----------|---------|--------------|
+| `azure-pipelines-infra.yml` | Changes to `infra/**` | Scans → Plans → Approves → Deploys infrastructure |
+| `azure-pipelines-app.yml` | Changes to `src/**` | Builds → Tests → Approves → Deploys web app |
+| `azure-pipelines-db.yml` | Manual trigger | Approves → Runs database migrations |
+
+### Key Rules
+1. ❌ **No local `terraform apply`** - all infrastructure via pipeline
+2. ❌ **No direct Azure deployments** - all via service principal
+3. ✅ **All secrets in Key Vault** - repo is public-safe
+4. ✅ **Manual approval required** - review before any production change
+
+---
+
 ## 📋 Status Legend
 
 - ⬜ Not Started
@@ -95,39 +125,52 @@
 - ✅ Created comprehensive `.gitignore`
 
 ### 4.3 Local Development
-To run Terraform locally, set environment variables:
-```powershell
-$env:TF_VAR_sql_admin_username = (az keyvault secret show --vault-name kv-personalwebsite-prod --name SqlAdminUsername --query value -o tsv)
-$env:TF_VAR_sql_admin_password = (az keyvault secret show --vault-name kv-personalwebsite-prod --name SqlAdminPassword --query value -o tsv)
-```
+> ⚠️ **Note:** Local Terraform is for planning/testing only. All applies go through DevOps.
 
 ---
 
-## Phase 5: Deploy Infrastructure with Terraform
+## Phase 5: Deploy Infrastructure via DevOps Pipeline
 
-### 5.1 Initial Terraform Deployment (Local)
-- ⬜ Navigate to infra folder
+> 🎯 **GitOps Approach:** All infrastructure deployment happens through Azure DevOps, not locally.
+
+### 5.1 Update Infrastructure Pipeline
+- ✅ Add security scanning stage (GitLeaks, tfsec, Checkov)
+- ✅ Add human-readable plan output to approval
+- ✅ Configure plan artifact for apply stage
+- ✅ Fix Terraform module issues (Key Vault secrets now managed externally)
+
+### 5.2 Setup Environment Approval Gates
+- ⬜ Create `infrastructure-prod` environment in Azure DevOps
+  1. Go to: Pipelines → Environments → New environment
+  2. Name: `infrastructure-prod`
+  3. Resource: None (managed by pipeline)
+- ⬜ Add manual approval check (yourself as approver)
+  1. Click on the environment → "..." menu → Approvals and checks
+  2. Add "Approvals" → Add yourself as approver
+- ⬜ Configure exclusive lock (prevent concurrent deployments)
+  1. Add "Exclusive Lock" check
+
+### 5.3 Import Existing Resources into Terraform State
+> Since we created Key Vault and Resource Group manually, we need to import them.
+
+- ⬜ Run import script: `.\infra\import-existing-resources.ps1`
   ```powershell
-  cd C:\Website\infra
+  cd c:\Website\infra
+  .\import-existing-resources.ps1
   ```
-- ⬜ Initialize Terraform
-  ```powershell
-  terraform init
-  ```
-- ⬜ Validate configuration
-  ```powershell
-  terraform validate
-  ```
-- ⬜ Run Terraform plan
-  ```powershell
-  terraform plan -out=tfplan
-  ```
-- ⬜ Review the plan output carefully
-- ⬜ Apply Terraform configuration
-  ```powershell
-  terraform apply tfplan
-  ```
-- ⬜ Note down all output values (App Service URL, SQL Server FQDN, etc.)
+- ⬜ Verify state with `terraform plan` (should show minimal changes)
+
+### 5.4 First Deployment via Pipeline
+- ⬜ Commit all changes and push to main
+- ⬜ Pipeline triggers automatically
+- ⬜ Review security scan results (GitLeaks, tfsec, Checkov)
+- ⬜ Review Terraform plan output (shows ADD/CHANGE/DESTROY)
+- ⬜ Approve deployment in Azure DevOps environment
+- ⬜ Verify resources created:
+  - App Service Plan: `asp-personalwebsite-prod` (F1 Free)
+  - App Service: `app-personalwebsite-prod`
+  - SQL Server: `sql-personalwebsite-prod`
+  - SQL Database: `sqldb-personalwebsite-prod` (Serverless)
 
 ### 5.2 Verify Azure Resources Created
 - ⬜ Resource Group: `rg-personalwebsite-prod`
@@ -136,6 +179,60 @@ $env:TF_VAR_sql_admin_password = (az keyvault secret show --vault-name kv-person
 - ⬜ SQL Server: `sql-personalwebsite-prod`
 - ⬜ SQL Database: `sqldb-personalwebsite-prod` (Serverless)
 - ⬜ Key Vault: `kv-personalwebsite-prod`
+
+---
+
+## ~~Phase 5b: DevOps Security & Quality Scanning~~ (Merged into Phase 5.1)
+
+> ✅ **COMPLETED:** Security scanning is now part of the infrastructure pipeline
+
+### 5b.1 Secret Scanning (Prevent accidental commits)
+- ✅ GitLeaks added to pipeline (scans for secrets in code)
+- ⬜ Add **Microsoft Security DevOps** extension (optional enhancement)
+- ⬜ Configure pre-commit hooks (optional, local)
+
+### 5b.2 Infrastructure Security Scanning
+- ✅ tfsec added to pipeline (Terraform security scanner)
+- ✅ Checkov added to pipeline (IaC compliance)
+- ⬜ Review and fix any security findings (after first run)
+
+### 5b.3 Dependency Vulnerability Scanning
+- ⬜ Add **OWASP Dependency Check** for .NET packages
+- ⬜ Add **npm audit** for React packages
+- ⬜ Configure **Snyk** integration (free tier: 200 tests/month)
+
+### 5b.4 Code Quality Analysis
+- ⬜ Set up **SonarCloud** (free for public repos)
+- ⬜ Configure quality gates (bugs, vulnerabilities, code smells)
+- ⬜ Add code coverage reporting
+
+---
+
+## Phase 5c: Branch Policies & Environment Approvals
+
+### 5c.1 Branch Policies (Azure DevOps)
+- ⬜ Configure `main` branch protection:
+  - Require pull request before merging
+  - Require at least 1 reviewer (or self-approve for solo dev)
+  - Require build validation (pipeline must pass)
+  - Require comment resolution
+- ⬜ Configure `develop` branch protection:
+  - Require pull request
+  - Require build validation
+
+### 5c.2 Environment Approvals
+- ⬜ Create environment: `production`
+  - Add approval gate (yourself as approver)
+  - Add exclusive lock (prevent concurrent deployments)
+- ⬜ Create environment: `infrastructure-prod`
+  - Add approval gate for Terraform apply
+- ⬜ Create environment: `database-prod`
+  - Add approval gate for migration runs
+
+### 5c.3 Pipeline Security
+- ⬜ Review pipeline permissions
+- ⬜ Enable artifact signing (optional)
+- ⬜ Generate SBOM (Software Bill of Materials)
 
 ---
 

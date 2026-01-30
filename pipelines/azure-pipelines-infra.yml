@@ -1,5 +1,17 @@
+# =============================================================================
 # Azure DevOps Pipeline - Infrastructure (Terraform)
-# Deploys Azure resources using Terraform
+# =============================================================================
+# This pipeline manages all Azure infrastructure via Terraform
+# 
+# Workflow:
+#   1. Push code to main → Pipeline triggers
+#   2. Security scans run (GitLeaks, tfsec, Checkov)
+#   3. Terraform plan runs and shows what will change
+#   4. Manual approval required (via environment)
+#   5. Terraform apply executes
+#
+# All deployments use the Azure DevOps service principal - never local applies!
+# =============================================================================
 
 trigger:
   branches:
@@ -29,26 +41,96 @@ variables:
   # Non-sensitive variables (safe to commit)
   subscriptionId: '16e19706-c60e-4dcf-a24c-050487191622'
   projectName: 'personalwebsite'
-  environment: 'prod'
+  tfEnvironment: 'prod'
   location: 'East US'
 
 stages:
-  # Plan Stage (runs on all branches)
+  # ==========================================================================
+  # Stage 1: Security Scanning
+  # ==========================================================================
+  - stage: SecurityScan
+    displayName: '🔒 Security Scanning'
+    jobs:
+      - job: SecretScanning
+        displayName: '🔍 Secret & Security Scans'
+        pool:
+          vmImage: 'ubuntu-latest'
+        
+        steps:
+          - checkout: self
+            fetchDepth: 0
+            displayName: '📥 Checkout Code'
+
+          # -------------------------------------------------------------------
+          # GitLeaks - Detect secrets in code
+          # -------------------------------------------------------------------
+          - script: |
+              echo "##[section]Installing GitLeaks..."
+              wget -q https://github.com/gitleaks/gitleaks/releases/download/v8.18.0/gitleaks_8.18.0_linux_x64.tar.gz
+              tar -xzf gitleaks_8.18.0_linux_x64.tar.gz
+              chmod +x gitleaks
+              
+              echo "##[section]Running GitLeaks scan..."
+              ./gitleaks detect --source . --verbose --redact --exit-code 1 || {
+                echo "##[error]❌ SECRETS DETECTED IN CODE! Review the output above."
+                exit 1
+              }
+              echo "##[section]✅ No secrets detected in code"
+            displayName: '🔍 GitLeaks - Secret Scanning'
+            continueOnError: false
+
+          # -------------------------------------------------------------------
+          # tfsec - Terraform security scanning
+          # -------------------------------------------------------------------
+          - script: |
+              echo "##[section]Installing tfsec..."
+              wget -q https://github.com/aquasecurity/tfsec/releases/download/v1.28.4/tfsec-linux-amd64
+              chmod +x tfsec-linux-amd64
+              
+              echo "##[section]Running tfsec scan on Terraform code..."
+              ./tfsec-linux-amd64 infra --format lovely --exclude-downloaded-modules || true
+              
+              echo ""
+              echo "##[section]tfsec scan complete - review any warnings above"
+            displayName: '🛡️ tfsec - Terraform Security'
+            continueOnError: true
+
+          # -------------------------------------------------------------------
+          # Checkov - IaC compliance scanning
+          # -------------------------------------------------------------------
+          - script: |
+              echo "##[section]Installing Checkov..."
+              pip install checkov -q
+              
+              echo "##[section]Running Checkov compliance scan..."
+              checkov -d infra --framework terraform --output cli --compact --soft-fail
+              
+              echo ""
+              echo "##[section]Checkov scan complete - review any findings above"
+            displayName: '✅ Checkov - IaC Compliance'
+            continueOnError: true
+
+  # ==========================================================================
+  # Stage 2: Terraform Plan
+  # ==========================================================================
   - stage: Plan
-    displayName: 'Terraform Plan'
+    displayName: '📋 Terraform Plan'
+    dependsOn: SecurityScan
+    condition: succeeded()
     jobs:
       - job: TerraformPlan
-        displayName: 'Plan Infrastructure Changes'
+        displayName: '📝 Plan Infrastructure Changes'
         pool:
           vmImage: 'ubuntu-latest'
         
         steps:
           - checkout: self
             fetchDepth: 1
+            displayName: '📥 Checkout Code'
 
           # Get secrets from Key Vault
           - task: AzureKeyVault@2
-            displayName: 'Get Secrets from Key Vault'
+            displayName: '🔑 Get Secrets from Key Vault'
             inputs:
               azureSubscription: '$(azureSubscription)'
               keyVaultName: '$(keyVaultName)'
@@ -57,13 +139,13 @@ stages:
 
           # Install Terraform
           - task: TerraformInstaller@1
-            displayName: 'Install Terraform'
+            displayName: '⚙️ Install Terraform $(terraformVersion)'
             inputs:
               terraformVersion: '$(terraformVersion)'
 
           # Terraform Init
           - task: TerraformTaskV4@4
-            displayName: 'Terraform Init'
+            displayName: '🔧 Terraform Init'
             inputs:
               provider: 'azurerm'
               command: 'init'
@@ -76,7 +158,7 @@ stages:
 
           # Terraform Validate
           - task: TerraformTaskV4@4
-            displayName: 'Terraform Validate'
+            displayName: '✔️ Terraform Validate'
             inputs:
               provider: 'azurerm'
               command: 'validate'
@@ -84,31 +166,89 @@ stages:
 
           # Terraform Plan
           - task: TerraformTaskV4@4
-            displayName: 'Terraform Plan'
+            name: terraformPlan
+            displayName: '📝 Terraform Plan'
             inputs:
               provider: 'azurerm'
               command: 'plan'
               workingDirectory: 'infra'
               environmentServiceNameAzureRM: '$(azureSubscription)'
-              commandOptions: '-out=tfplan -var="subscription_id=$(subscriptionId)" -var="project_name=$(projectName)" -var="environment=$(environment)" -var="location=$(location)" -var="sql_admin_username=$(SqlAdminUsername)" -var="sql_admin_password=$(SqlAdminPassword)"'
+              commandOptions: '-out=tfplan -detailed-exitcode -var="subscription_id=$(subscriptionId)" -var="project_name=$(projectName)" -var="environment=$(tfEnvironment)" -var="location=$(location)" -var="sql_admin_username=$(SqlAdminUsername)" -var="sql_admin_password=$(SqlAdminPassword)"'
 
-          # Publish plan artifact
+          # Generate human-readable plan
+          - script: |
+              cd infra
+              terraform show -no-color tfplan > tfplan.txt
+              
+              echo "##[section]=============================================="
+              echo "##[section]📋 TERRAFORM PLAN - INFRASTRUCTURE CHANGES"
+              echo "##[section]=============================================="
+              echo ""
+              cat tfplan.txt
+              echo ""
+              echo "##[section]=============================================="
+              
+              # Count changes for summary
+              ADDS=$(grep -c "will be created" tfplan.txt 2>/dev/null || echo "0")
+              CHANGES=$(grep -c "will be updated" tfplan.txt 2>/dev/null || echo "0")
+              DESTROYS=$(grep -c "will be destroyed" tfplan.txt 2>/dev/null || echo "0")
+              
+              echo ""
+              echo "##[section]📊 CHANGE SUMMARY"
+              echo "##[section]=============================================="
+              echo "  ➕ Resources to CREATE:  $ADDS"
+              echo "  🔄 Resources to UPDATE:  $CHANGES"  
+              echo "  ❌ Resources to DESTROY: $DESTROYS"
+              echo "##[section]=============================================="
+              echo ""
+              
+              # Create summary file for artifact
+              echo "TERRAFORM PLAN SUMMARY" > tfplan-summary.txt
+              echo "======================" >> tfplan-summary.txt
+              echo "Generated: $(date)" >> tfplan-summary.txt
+              echo "" >> tfplan-summary.txt
+              echo "Resources to CREATE:  $ADDS" >> tfplan-summary.txt
+              echo "Resources to UPDATE:  $CHANGES" >> tfplan-summary.txt
+              echo "Resources to DESTROY: $DESTROYS" >> tfplan-summary.txt
+              echo "" >> tfplan-summary.txt
+              echo "Review the full plan in tfplan.txt artifact" >> tfplan-summary.txt
+            displayName: '📊 Generate Plan Summary'
+
+          # Publish plan binary (for apply stage)
           - task: PublishBuildArtifacts@1
-            displayName: 'Publish Terraform Plan'
+            displayName: '📦 Publish Plan (Binary)'
             inputs:
               pathToPublish: 'infra/tfplan'
               artifactName: 'terraform-plan'
 
-  # Apply Stage (only on main branch, with approval)
+          # Publish readable plan (for review)
+          - task: PublishBuildArtifacts@1
+            displayName: '📄 Publish Plan (Readable)'
+            inputs:
+              pathToPublish: 'infra/tfplan.txt'
+              artifactName: 'terraform-plan-readable'
+
+          # Publish summary
+          - task: PublishBuildArtifacts@1
+            displayName: '📋 Publish Plan Summary'
+            inputs:
+              pathToPublish: 'infra/tfplan-summary.txt'
+              artifactName: 'terraform-plan-summary'
+
+  # ==========================================================================
+  # Stage 3: Terraform Apply (Requires Approval)
+  # ==========================================================================
   - stage: Apply
-    displayName: 'Terraform Apply'
+    displayName: '🚀 Terraform Apply'
     dependsOn: Plan
     condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
     jobs:
       - deployment: TerraformApply
-        displayName: 'Apply Infrastructure Changes'
+        displayName: '🚀 Apply Infrastructure Changes'
         pool:
           vmImage: 'ubuntu-latest'
+        # ⚠️ This environment must have approval configured in Azure DevOps
+        # Go to: Pipelines > Environments > infrastructure-prod > Approvals and checks
         environment: 'infrastructure-prod'
         strategy:
           runOnce:
@@ -116,10 +256,11 @@ stages:
               steps:
                 - checkout: self
                   fetchDepth: 1
+                  displayName: '📥 Checkout Code'
 
                 # Get secrets from Key Vault
                 - task: AzureKeyVault@2
-                  displayName: 'Get Secrets from Key Vault'
+                  displayName: '🔑 Get Secrets from Key Vault'
                   inputs:
                     azureSubscription: '$(azureSubscription)'
                     keyVaultName: '$(keyVaultName)'
@@ -128,22 +269,22 @@ stages:
 
                 # Download plan artifact
                 - task: DownloadBuildArtifacts@1
-                  displayName: 'Download Terraform Plan'
+                  displayName: '📥 Download Terraform Plan'
                   inputs:
                     buildType: 'current'
                     downloadType: 'single'
                     artifactName: 'terraform-plan'
-                    downloadPath: 'infra'
+                    downloadPath: '$(System.ArtifactsDirectory)'
 
                 # Install Terraform
                 - task: TerraformInstaller@1
-                  displayName: 'Install Terraform'
+                  displayName: '⚙️ Install Terraform $(terraformVersion)'
                   inputs:
                     terraformVersion: '$(terraformVersion)'
 
                 # Terraform Init
                 - task: TerraformTaskV4@4
-                  displayName: 'Terraform Init'
+                  displayName: '🔧 Terraform Init'
                   inputs:
                     provider: 'azurerm'
                     command: 'init'
@@ -156,10 +297,22 @@ stages:
 
                 # Terraform Apply
                 - task: TerraformTaskV4@4
-                  displayName: 'Terraform Apply'
+                  displayName: '🚀 Terraform Apply'
                   inputs:
                     provider: 'azurerm'
                     command: 'apply'
                     workingDirectory: 'infra'
                     environmentServiceNameAzureRM: '$(azureSubscription)'
-                    commandOptions: 'infra/terraform-plan/tfplan'
+                    commandOptions: '$(System.ArtifactsDirectory)/terraform-plan/tfplan'
+
+                # Show outputs
+                - script: |
+                    cd infra
+                    echo "##[section]=============================================="
+                    echo "##[section]📤 TERRAFORM OUTPUTS"
+                    echo "##[section]=============================================="
+                    terraform output
+                    echo "##[section]=============================================="
+                    echo ""
+                    echo "##[section]✅ Infrastructure deployment complete!"
+                  displayName: '📤 Show Deployment Outputs'

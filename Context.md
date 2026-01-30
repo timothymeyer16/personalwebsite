@@ -1,7 +1,7 @@
 # Personal Website — Project Context
 
 > **Last Updated:** January 30, 2026  
-> **Status:** Phase 1 - Azure Setup In Progress
+> **Status:** Phase 5 - Infrastructure Deployment via DevOps
 
 ## Overview
 
@@ -28,6 +28,76 @@ A personal website with a React frontend and .NET Core backend, deployed to Azur
 | Created | January 30, 2026 |
 
 > **Note:** Client secret stored securely in Azure DevOps. Expires January 2028.
+
+## DevOps Deployment Architecture
+
+### Core Principle: GitOps
+**All deployments happen through Azure DevOps pipelines - never locally.**
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           DEPLOYMENT WORKFLOW                                │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│   Developer          Azure DevOps Pipeline              Azure Cloud          │
+│   ─────────          ─────────────────────              ───────────          │
+│                                                                              │
+│   ┌─────────┐       ┌──────────────────────┐       ┌──────────────────┐     │
+│   │  Push   │──────▶│  1. Security Scans   │       │                  │     │
+│   │  Code   │       │     - GitLeaks       │       │   App Service    │     │
+│   └─────────┘       │     - tfsec          │       │   SQL Database   │     │
+│                     │     - Checkov        │       │   Key Vault      │     │
+│                     └──────────┬───────────┘       │                  │     │
+│                                │                    └────────▲─────────┘     │
+│                                ▼                             │               │
+│                     ┌──────────────────────┐                 │               │
+│                     │  2. Build & Plan     │                 │               │
+│                     │     - Terraform Plan │                 │               │
+│                     │     - Show Changes   │                 │               │
+│                     └──────────┬───────────┘                 │               │
+│                                │                             │               │
+│   ┌─────────┐                  ▼                             │               │
+│   │ Review  │       ┌──────────────────────┐                 │               │
+│   │ Changes │◀──────│  3. Manual Approval  │                 │               │
+│   └────┬────┘       │     - Review Plan    │                 │               │
+│        │            │     - Approve/Reject │                 │               │
+│        ▼            └──────────┬───────────┘                 │               │
+│   ┌─────────┐                  │                             │               │
+│   │ Approve │                  ▼                             │               │
+│   └────┬────┘       ┌──────────────────────┐                 │               │
+│        │            │  4. Deploy           │─────────────────┘               │
+│        └───────────▶│     - Terraform Apply│                                 │
+│                     │     - App Deployment │                                 │
+│                     └──────────────────────┘                                 │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Pipeline Triggers
+
+| Change Type | Pipeline | Trigger | Action |
+|-------------|----------|---------|--------|
+| `infra/**` changes | `azure-pipelines-infra.yml` | Push to main | Security scan → Plan → Approval → Apply |
+| `src/**` changes | `azure-pipelines-app.yml` | Push to main | Build → Test → Approval → Deploy |
+| Database migrations | `azure-pipelines-db.yml` | Manual | Approval → Run migrations |
+
+### Security Scanning (All FREE)
+
+| Tool | Purpose | Runs On |
+|------|---------|---------|
+| **GitLeaks** | Detect secrets in code | Every commit |
+| **tfsec** | Terraform security issues | Infrastructure changes |
+| **Checkov** | IaC compliance | Infrastructure changes |
+| **OWASP Dependency Check** | Vulnerable packages | App builds |
+| **npm audit** | JS dependency vulnerabilities | App builds |
+
+### Manual Approval Gates
+
+| Environment | Approvers | Required For |
+|-------------|-----------|--------------|
+| `infrastructure-prod` | Project Owner | Terraform apply |
+| `production` | Project Owner | App deployment |
+| `database-prod` | Project Owner | Database migrations |
 
 ## Secrets Management
 

@@ -60,6 +60,8 @@ module "sql_database" {
 }
 
 # Key Vault Module
+# Note: Secrets are managed externally via Azure CLI/Portal for security
+# This module only creates the Key Vault infrastructure
 module "key_vault" {
   source = "./modules/key-vault"
 
@@ -71,9 +73,9 @@ module "key_vault" {
   object_id           = data.azurerm_client_config.current.object_id
   tags                = var.tags
 
-  secrets = {
-    "SqlConnectionString" = module.sql_database.connection_string
-  }
+  # Secrets are managed externally in Key Vault (not in Terraform)
+  # This keeps sensitive values out of state files and git history
+  secrets = {}
 }
 
 # Azure AD B2C Module (Note: B2C tenant creation has limitations in Terraform)
