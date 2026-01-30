@@ -53,7 +53,7 @@ stages:
       - job: SecretScanning
         displayName: '🔍 Secret & Security Scans'
         pool:
-          vmImage: 'ubuntu-latest'
+          name: 'Default'
         
         steps:
           - checkout: self
@@ -120,7 +120,7 @@ stages:
       - job: TerraformPlan
         displayName: '📝 Plan Infrastructure Changes'
         pool:
-          vmImage: 'ubuntu-latest'
+          name: 'Default'
         
         steps:
           - checkout: self
@@ -254,7 +254,7 @@ stages:
       - deployment: TerraformApply
         displayName: '🚀 Apply Infrastructure Changes'
         pool:
-          vmImage: 'ubuntu-latest'
+          name: 'Default'
         # ⚠️ This environment must have approval configured in Azure DevOps
         # Go to: Pipelines > Environments > infrastructure-prod > Approvals and checks
         environment: 'infrastructure-prod'

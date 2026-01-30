@@ -43,7 +43,7 @@ stages:
       - job: BuildJob
         displayName: 'Build React & .NET'
         pool:
-          vmImage: 'windows-latest'
+          name: 'Default'
         
         steps:
           # Checkout code
@@ -108,7 +108,7 @@ stages:
       - deployment: DeployJob
         displayName: '🚀 Deploy to Azure App Service'
         pool:
-          vmImage: 'windows-latest'
+          name: 'Default'
         # ⚠️ This environment must have approval configured in Azure DevOps
         environment: 'production'
         strategy:
