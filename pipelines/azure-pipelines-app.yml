@@ -1,6 +1,15 @@
+# =============================================================================
 # Azure DevOps Pipeline - Application Build and Deploy
-# Builds React frontend and .NET API, deploys to Azure App Service
+# =============================================================================
+# GitOps Workflow:
+#   1. Create feature branch, make changes to src/**
+#   2. Push branch → PR to main
+#   3. Pipeline runs: Build + Test (PR validation)
+#   4. Review build results, approve PR
+#   5. Merge to main → Deploy to Azure App Service
+# =============================================================================
 
+# Only trigger deploy on main branch (after PR merge)
 trigger:
   branches:
     include:
@@ -9,10 +18,10 @@ trigger:
     include:
       - src/**
 
+# Run build validation on PRs targeting main
 pr:
   branches:
     include:
-      - develop
       - main
   paths:
     include:
@@ -79,16 +88,28 @@ stages:
               pathToPublish: 'src/PersonalWebsite.Api/bin/$(buildConfiguration)/net7.0/publish'
               artifactName: 'webapp'
 
-  # Deploy Stage (only on main branch)
+  # ==========================================================================
+  # Deploy Stage (Only runs on main branch after PR merge)
+  # ==========================================================================
   - stage: Deploy
-    displayName: 'Deploy to Production'
+    displayName: '🚀 Deploy to Production'
     dependsOn: Build
-    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+    # Only run Deploy stage when:
+    # 1. Build succeeded AND
+    # 2. This is the main branch AND
+    # 3. Not a PR validation build
+    condition: |
+      and(
+        succeeded(),
+        eq(variables['Build.SourceBranch'], 'refs/heads/main'),
+        ne(variables['Build.Reason'], 'PullRequest')
+      )
     jobs:
       - deployment: DeployJob
-        displayName: 'Deploy to Azure App Service'
+        displayName: '🚀 Deploy to Azure App Service'
         pool:
           vmImage: 'windows-latest'
+        # ⚠️ This environment must have approval configured in Azure DevOps
         environment: 'production'
         strategy:
           runOnce:

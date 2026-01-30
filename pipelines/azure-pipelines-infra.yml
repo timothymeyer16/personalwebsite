@@ -1,18 +1,17 @@
 # =============================================================================
 # Azure DevOps Pipeline - Infrastructure (Terraform)
 # =============================================================================
-# This pipeline manages all Azure infrastructure via Terraform
-# 
-# Workflow:
-#   1. Push code to main → Pipeline triggers
-#   2. Security scans run (GitLeaks, tfsec, Checkov)
-#   3. Terraform plan runs and shows what will change
-#   4. Manual approval required (via environment)
-#   5. Terraform apply executes
+# GitOps Workflow:
+#   1. Create feature branch, make changes
+#   2. Push branch → PR to main
+#   3. Pipeline runs: Security scans + Terraform plan (PR validation)
+#   4. Review plan in PR, approve PR
+#   5. Merge to main → Terraform apply runs
 #
 # All deployments use the Azure DevOps service principal - never local applies!
 # =============================================================================
 
+# Only trigger on main branch (after PR merge)
 trigger:
   branches:
     include:
@@ -21,10 +20,10 @@ trigger:
     include:
       - infra/**
 
+# Run validation on PRs targeting main
 pr:
   branches:
     include:
-      - develop
       - main
   paths:
     include:
@@ -236,12 +235,21 @@ stages:
               artifactName: 'terraform-plan-summary'
 
   # ==========================================================================
-  # Stage 3: Terraform Apply (Requires Approval)
+  # Stage 3: Terraform Apply (Only runs on main branch after PR merge)
   # ==========================================================================
   - stage: Apply
     displayName: '🚀 Terraform Apply'
     dependsOn: Plan
-    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+    # Only run Apply stage when:
+    # 1. Plan succeeded AND
+    # 2. This is the main branch (not a PR) AND
+    # 3. Not a PR validation build
+    condition: |
+      and(
+        succeeded(),
+        eq(variables['Build.SourceBranch'], 'refs/heads/main'),
+        ne(variables['Build.Reason'], 'PullRequest')
+      )
     jobs:
       - deployment: TerraformApply
         displayName: '🚀 Apply Infrastructure Changes'
