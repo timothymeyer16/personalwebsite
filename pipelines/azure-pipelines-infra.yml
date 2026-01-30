@@ -20,11 +20,17 @@ pr:
 
 variables:
   terraformVersion: '1.5.0'
-  azureSubscription: 'Azure-ServiceConnection' # Update with your service connection name
+  azureSubscription: 'Azure-ServiceConnection'
   backendResourceGroup: 'rg-terraform-state'
-  backendStorageAccount: 'stpersonalwebsitetfstate'
+  backendStorageAccount: 'stpaborwebsitetfstate'
   backendContainerName: 'tfstate'
   backendKey: 'personalwebsite.terraform.tfstate'
+  keyVaultName: 'kv-personalwebsite-prod'
+  # Non-sensitive variables (safe to commit)
+  subscriptionId: '16e19706-c60e-4dcf-a24c-050487191622'
+  projectName: 'personalwebsite'
+  environment: 'prod'
+  location: 'East US'
 
 stages:
   # Plan Stage (runs on all branches)
@@ -39,6 +45,15 @@ stages:
         steps:
           - checkout: self
             fetchDepth: 1
+
+          # Get secrets from Key Vault
+          - task: AzureKeyVault@2
+            displayName: 'Get Secrets from Key Vault'
+            inputs:
+              azureSubscription: '$(azureSubscription)'
+              keyVaultName: '$(keyVaultName)'
+              secretsFilter: 'SqlAdminUsername,SqlAdminPassword'
+              runAsPreJob: false
 
           # Install Terraform
           - task: TerraformInstaller@1
@@ -75,7 +90,7 @@ stages:
               command: 'plan'
               workingDirectory: 'infra'
               environmentServiceNameAzureRM: '$(azureSubscription)'
-              commandOptions: '-out=tfplan -var-file=terraform.tfvars'
+              commandOptions: '-out=tfplan -var="subscription_id=$(subscriptionId)" -var="project_name=$(projectName)" -var="environment=$(environment)" -var="location=$(location)" -var="sql_admin_username=$(SqlAdminUsername)" -var="sql_admin_password=$(SqlAdminPassword)"'
 
           # Publish plan artifact
           - task: PublishBuildArtifacts@1
@@ -101,6 +116,15 @@ stages:
               steps:
                 - checkout: self
                   fetchDepth: 1
+
+                # Get secrets from Key Vault
+                - task: AzureKeyVault@2
+                  displayName: 'Get Secrets from Key Vault'
+                  inputs:
+                    azureSubscription: '$(azureSubscription)'
+                    keyVaultName: '$(keyVaultName)'
+                    secretsFilter: 'SqlAdminUsername,SqlAdminPassword'
+                    runAsPreJob: false
 
                 # Download plan artifact
                 - task: DownloadBuildArtifacts@1

@@ -1,7 +1,7 @@
 # Personal Website — Project Context
 
-> **Last Updated:** January 28, 2026  
-> **Status:** Planning Phase
+> **Last Updated:** January 30, 2026  
+> **Status:** Phase 1 - Azure Setup In Progress
 
 ## Overview
 
@@ -14,6 +14,32 @@ A personal website with a React frontend and .NET Core backend, deployed to Azur
 | GitHub | https://github.com/timothymeyer16/personalwebsite |
 | Azure DevOps | https://dev.azure.com/drayblaster/Personal%20Website |
 | Azure Subscription | `16e19706-c60e-4dcf-a24c-050487191622` |
+| Azure Tenant ID | `77611c66-c07b-476d-b6d9-9b68489d9220` |
+| Terraform State Storage | `stpaborwebsitetfstate` (rg-terraform-state) |
+
+## Azure DevOps Service Connection
+
+| Property | Value |
+|----------|-------|
+| Service Connection Name | `Azure-ServiceConnection` |
+| Service Principal (App) ID | `cc3acb81-e79a-41e0-bbf0-abaec0514bff` |
+| App Registration Name | `AzureDevOps-ServiceConnection` |
+| Role Assignment | Contributor (Subscription scope) |
+| Created | January 30, 2026 |
+
+> **Note:** Client secret stored securely in Azure DevOps. Expires January 2028.
+
+## Secrets Management
+
+All sensitive information is stored in **Azure Key Vault** - this repository is safe for public access.
+
+| Secret Name | Location | Purpose |
+|-------------|----------|---------|
+| `SqlAdminUsername` | Key Vault | SQL Server admin username |
+| `SqlAdminPassword` | Key Vault | SQL Server admin password |
+| Service Principal Secret | Azure DevOps | Pipeline authentication |
+
+**Key Vault:** `kv-personalwebsite-prod`
 
 ## Technology Stack
 

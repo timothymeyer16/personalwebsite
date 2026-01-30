@@ -1,0 +1,124 @@
+# =============================================================================
+# Personal Website - .gitignore
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Terraform
+# -----------------------------------------------------------------------------
+# Local .terraform directories
+**/.terraform/*
+
+# .tfstate files (state is stored in Azure Storage)
+*.tfstate
+*.tfstate.*
+
+# Crash log files
+crash.log
+crash.*.log
+
+# Exclude override files (but NOT terraform.tfvars - it's safe now!)
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Terraform lock file (include in repo for consistency)
+# !.terraform.lock.hcl
+
+# Terraform plan files (binary)
+*.tfplan
+tfplan
+
+# -----------------------------------------------------------------------------
+# .NET / C#
+# -----------------------------------------------------------------------------
+bin/
+obj/
+*.user
+*.userosscache
+*.suo
+*.cache
+*.dll
+*.exe
+*.pdb
+
+# User-specific files
+*.rsuser
+*.suo
+*.user
+
+# NuGet Packages
+*.nupkg
+**/[Pp]ackages/*
+
+# Visual Studio
+.vs/
+*.sln.docstates
+
+# Rider
+.idea/
+
+# User secrets (local development)
+secrets.json
+
+# -----------------------------------------------------------------------------
+# Node.js / React
+# -----------------------------------------------------------------------------
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build outputs
+dist/
+build/
+
+# Environment files with secrets (if any)
+.env.local
+.env.*.local
+
+# -----------------------------------------------------------------------------
+# IDE / Editors
+# -----------------------------------------------------------------------------
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# JetBrains
+.idea/
+*.iml
+
+# -----------------------------------------------------------------------------
+# OS Generated
+# -----------------------------------------------------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# -----------------------------------------------------------------------------
+# Logs
+# -----------------------------------------------------------------------------
+logs/
+*.log
+
+# -----------------------------------------------------------------------------
+# Temporary files
+# -----------------------------------------------------------------------------
+*.tmp
+*.temp
+*.swp
+*~
+
+# -----------------------------------------------------------------------------
+# Sensitive files that should NEVER be committed
+# -----------------------------------------------------------------------------
+# Note: terraform.tfvars is NOW SAFE - secrets moved to Key Vault
+# But keep this as a reminder for any future sensitive files
+*.secrets
+*-secrets.json
