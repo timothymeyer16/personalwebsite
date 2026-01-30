@@ -1,6 +1,7 @@
 terraform {
   required_version = ">= 1.5.0"
 
+  # Test PR workflow - this comment triggers the infrastructure pipeline
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
